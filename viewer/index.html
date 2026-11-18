@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Interactive 3D Review</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="importmap">
+      {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}
+    </script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="viewer-card" aria-label="Interactive 3D review viewer">
+        <div id="viewer" class="viewer" role="application" aria-label="Rotatable 3D model viewer">
+          <div id="loading" class="loading">Loading model…</div>
+          <div class="viewer-help">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
+        </div>
+        <div class="toolbar" aria-label="Viewer controls">
+          <button id="reset" type="button">Reset view</button>
+          <button id="autoRotate" type="button" aria-pressed="false">Auto-rotate</button>
+          <button id="wireframe" type="button" aria-pressed="false">Wireframe</button>
+        </div>
+      </section>
+      <aside class="info-card">
+        <p class="eyebrow">INTERACTIVE REVIEW</p>
+        <h1 id="title">3D model review</h1>
+        <p class="status"><span class="status-dot"></span><span id="status">Unapproved · review geometry</span></p>
+        <dl id="facts" class="facts"></dl>
+        <div class="note"><strong>Review note</strong><p id="note">Interactive viewing does not certify printability, fit, strength, or load capacity.</p></div>
+        <p id="prompt" class="review-prompt">Inspect the model from several angles, then send feedback or approve this exact version.</p>
+      </aside>
+    </main>
+    <script type="module" src="viewer.js"></script>
+  </body>
+</html>

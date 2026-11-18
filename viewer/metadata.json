@@ -1,0 +1,13 @@
+{
+  "title": "3D model review",
+  "status": "Unapproved · review geometry",
+  "facts": {
+    "Version": "<version>",
+    "Envelope": "<x> × <y> × <z> <units>",
+    "Pattern": "<pattern>",
+    "Material": "<material or unspecified>",
+    "Print process": "<process or unspecified>"
+  },
+  "note": "Interactive viewing does not certify printability, fit, strength, or load capacity.",
+  "prompt": "Inspect the model from several angles, then send feedback or approve this exact version."
+}
