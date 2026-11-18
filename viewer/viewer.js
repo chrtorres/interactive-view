@@ -4,9 +4,14 @@ import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/
 
 const host = document.querySelector("#viewer");
 const loading = document.querySelector("#loading");
+const explodeButton = document.querySelector("#explode");
+const inspection = document.querySelector("#part-inspection");
+const partPicker = document.querySelector("#part");
+const partStatus = document.querySelector("#part-status");
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 2000);
-camera.position.set(440, -440, 330);
+const defaultDirection = new THREE.Vector3(0, 0.95, 1.15).normalize();
+camera.position.copy(defaultDirection);
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -19,27 +24,112 @@ const key = new THREE.DirectionalLight(0xffffff, 4.0); key.position.set(260, -30
 const rim = new THREE.DirectionalLight(0x4b9cff, 3.0); rim.position.set(-300, 260, 150); scene.add(rim);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.06; controls.enablePan = true;
-controls.minDistance = 330; controls.maxDistance = 900; controls.target.set(0, 0, 0); controls.update();
-let model = null; let modelBox = null; let rotating = false;
-const initialCamera = new THREE.Vector3(440, -440, 330);
+controls.update();
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let model = null;
+let parts = [];
+let guides = [];
+let exploded = false;
+let transition = null;
+const materials = new Set();
 
 function fitRenderer() {
   const rect = host.getBoundingClientRect();
   renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height), false);
   camera.aspect = rect.width / Math.max(1, rect.height); camera.updateProjectionMatrix();
 }
-function resetView() {
-  camera.position.copy(initialCamera); controls.target.set(0, 0, 0);
-  if (modelBox) controls.minDistance = Math.max(330, modelBox.getSize(new THREE.Vector3()).length() * 0.72);
+function frameView(direction = defaultDirection) {
+  if (!model) return;
+  const bounds = new THREE.Box3();
+  if (exploded) {
+    for (const { node } of parts) {
+      if (node.visible) bounds.expandByObject(node);
+    }
+  } else {
+    bounds.setFromObject(model);
+  }
+  if (bounds.isEmpty()) return;
+
+  const center = bounds.getCenter(new THREE.Vector3());
+  const span = Math.max(1e-6, bounds.getSize(new THREE.Vector3()).length());
+  camera.position.copy(center).add(direction);
+  camera.lookAt(center);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+  const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.85;
+  const horizontal = vertical * camera.aspect;
+  let distance = span * 0.6;
+  for (const x of [bounds.min.x, bounds.max.x]) {
+    for (const y of [bounds.min.y, bounds.max.y]) {
+      for (const z of [bounds.min.z, bounds.max.z]) {
+        const corner = new THREE.Vector3(x, y, z).sub(center);
+        const padding = Math.max(Math.abs(corner.dot(right)) / horizontal, Math.abs(corner.dot(up)) / vertical);
+        distance = Math.max(distance, corner.dot(direction) + padding);
+      }
+    }
+  }
+
+  controls.target.copy(center);
+  controls.minDistance = span * 0.12;
+  controls.maxDistance = distance * 4;
+  camera.near = span / 1500;
+  camera.far = controls.maxDistance + span;
+  camera.position.copy(center).addScaledVector(direction, distance);
+  camera.updateProjectionMatrix();
   controls.update();
 }
-function setWireframe(enabled) {
-  if (!model) return;
-  model.traverse((object) => {
-    if (!object.isMesh) return;
-    object.material = object.material.clone(); object.material.wireframe = enabled;
-    object.material.transparent = enabled; object.material.opacity = enabled ? 0.92 : 1;
+
+function registerParts(definitions = []) {
+  if (Array.isArray(definitions) && definitions.length === 0) return;
+  const valid = Array.isArray(definitions) && definitions.length >= 2 && definitions.every((part) =>
+    typeof part?.node === "string" && part.node.trim() && typeof part.label === "string" && part.label.trim() &&
+    Array.isArray(part.offset) && part.offset.length === 3 && part.offset.every(Number.isFinite)
+  );
+  if (!valid) {
+    partStatus.textContent = "Explode requires at least two named parts with three-component offsets.";
+    partStatus.hidden = false;
+    return;
+  }
+  const byName = new Map(model.children.map((node) => [node.name, node]));
+  const entries = definitions.map(({ node: name, label, offset }) => ({
+    node: byName.get(THREE.PropertyBinding.sanitizeNodeName(name)),
+    label,
+    offset: new THREE.Vector3(...offset),
+  }));
+  if (entries.some(({ node }) => !node || !node.getObjectByProperty("isMesh", true)) ||
+      new Set(entries.map(({ node }) => node)).size !== entries.length) {
+    partStatus.textContent = "Check that each part matches a unique top-level GLB node containing geometry.";
+    partStatus.hidden = false;
+    return;
+  }
+
+  parts = entries.map((part, index) => {
+    partPicker.add(new Option(part.label, String(index)));
+    const assembled = part.node.position.clone();
+    return { ...part, assembled, separated: assembled.clone().add(part.offset) };
   });
+  const printable = new Set(parts.map(({ node }) => node));
+  guides = model.children.filter((node) => !printable.has(node))
+    .map((node) => ({ node, visible: node.visible }));
+  explodeButton.disabled = false;
+}
+
+function updateLayout(animateParts = false) {
+  const direction = camera.position.clone().sub(controls.target).normalize();
+  const starts = parts.map(({ node }) => node.position.clone());
+  const ends = parts.map((part) => exploded ? part.separated : part.assembled);
+  const pick = partPicker.value;
+  parts.forEach(({ node }, index) => {
+    node.position.copy(ends[index]);
+    node.visible = !exploded || pick === "" || index === Number(pick);
+  });
+  for (const guide of guides) guide.node.visible = !exploded && guide.visible;
+  frameView(direction);
+  transition = null;
+  if (animateParts && !reducedMotion.matches) {
+    transition = { starts, ends, startTime: performance.now() };
+    parts.forEach(({ node }, index) => node.position.copy(starts[index]));
+  }
 }
 function renderMetadata(metadata) {
   document.querySelector("#title").textContent = metadata.title || "3D model review";
@@ -55,14 +145,68 @@ function renderMetadata(metadata) {
   }
 }
 
-fetch("metadata.json").then((response) => response.ok ? response.json() : {}).then(renderMetadata).catch(() => renderMetadata({}));
-new GLTFLoader().load("model.glb", (gltf) => {
-  model = gltf.scene; modelBox = new THREE.Box3().setFromObject(model);
-  model.position.sub(modelBox.getCenter(new THREE.Vector3())); scene.add(model); loading.classList.add("hidden"); resetView();
+const metadataRequest = fetch("metadata.json")
+  .then((response) => response.ok ? response.json() : {})
+  .then((metadata) => metadata || {})
+  .catch(() => ({}));
+metadataRequest.then(renderMetadata);
+new GLTFLoader().load("model.glb", async (gltf) => {
+  model = gltf.scene;
+  model.traverse((node) => {
+    if (node.isMesh) {
+      for (const material of [node.material].flat()) materials.add(material);
+    }
+  });
+  const metadata = await metadataRequest;
+  registerParts(metadata.parts);
+  scene.add(model);
+  frameView();
+  loading.classList.add("hidden");
 }, undefined, (error) => { loading.textContent = "Could not load model.glb"; console.error(error); });
-document.querySelector("#reset").addEventListener("click", resetView);
-document.querySelector("#autoRotate").addEventListener("click", (event) => { rotating = !rotating; event.currentTarget.setAttribute("aria-pressed", String(rotating)); });
-document.querySelector("#wireframe").addEventListener("click", (event) => { const enabled = event.currentTarget.getAttribute("aria-pressed") !== "true"; event.currentTarget.setAttribute("aria-pressed", String(enabled)); setWireframe(enabled); });
-window.addEventListener("resize", fitRenderer); fitRenderer();
-function animate() { requestAnimationFrame(animate); if (rotating && model) model.rotation.y += 0.0025; controls.update(); renderer.render(scene, camera); }
-animate();
+
+explodeButton.addEventListener("click", () => {
+  exploded = !exploded;
+  explodeButton.textContent = exploded ? "Reassemble" : "Explode";
+  explodeButton.setAttribute("aria-pressed", String(exploded));
+  inspection.hidden = !exploded;
+  partPicker.value = "";
+  updateLayout(true);
+});
+partPicker.addEventListener("change", () => updateLayout());
+document.querySelector("#reset").addEventListener("click", () => {
+  if (transition) updateLayout();
+  frameView();
+});
+document.querySelector("#autoRotate").addEventListener("click", (event) => {
+  controls.autoRotate = !controls.autoRotate;
+  event.currentTarget.setAttribute("aria-pressed", String(controls.autoRotate));
+});
+document.querySelector("#wireframe").addEventListener("click", (event) => {
+  const enabled = event.currentTarget.getAttribute("aria-pressed") !== "true";
+  event.currentTarget.setAttribute("aria-pressed", String(enabled));
+  for (const material of materials) material.wireframe = enabled;
+});
+window.addEventListener("resize", () => {
+  fitRenderer();
+  if (transition) updateLayout();
+  frameView();
+});
+fitRenderer();
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  if (transition) {
+    const amount = THREE.MathUtils.smoothstep(time - transition.startTime, 0, 320);
+    parts.forEach(({ node }, index) => {
+      if (amount === 1) {
+        node.position.copy(transition.ends[index]);
+      } else {
+        node.position.lerpVectors(transition.starts[index], transition.ends[index], amount);
+      }
+    });
+    if (amount === 1) transition = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);

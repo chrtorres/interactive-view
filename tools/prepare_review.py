@@ -5,6 +5,7 @@ import argparse
 import functools
 import http.server
 import json
+import math
 import os
 import shutil
 import socket
@@ -32,6 +33,28 @@ def find_browser(explicit=None):
 
 def find_blender(explicit=None):
     return explicit or shutil.which("blender")
+
+
+def load_parts(path):
+    parts = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(parts, list) or len(parts) == 1:
+        raise ValueError("expected an array with zero or at least two parts")
+    names = set()
+    for index, part in enumerate(parts, start=1):
+        if not isinstance(part, dict):
+            raise ValueError(f"part {index} must be an object")
+        for key in ("node", "label"):
+            if not isinstance(part.get(key), str) or not part[key].strip():
+                raise ValueError(f"part {index} needs a nonempty {key}")
+        if part["node"] in names:
+            raise ValueError(f"duplicate part node: {part['node']}")
+        names.add(part["node"])
+        offset = part.get("offset")
+        if not (isinstance(offset, list) and len(offset) == 3 and all(
+            type(value) in (int, float) and math.isfinite(value) for value in offset
+        )):
+            raise ValueError(f"part {index} needs three finite offset components")
+    return [{key: part[key] for key in ("node", "label", "offset")} for part in parts]
 
 
 def export_with_blender(source, destination, blender):
@@ -97,6 +120,7 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True, help="review package directory")
     parser.add_argument("--title", default=None)
     parser.add_argument("--status", default="Unapproved · review geometry")
+    parser.add_argument("--parts", type=Path, help="JSON array of named GLB parts and explosion offsets")
     parser.add_argument("--browser", default=None)
     parser.add_argument("--blender", default=None)
     parser.add_argument("--no-screenshot", action="store_true")
@@ -107,6 +131,10 @@ def main(argv=None):
         parser.error(f"input does not exist: {source}")
     if source.suffix.lower() not in SUPPORTED:
         parser.error(f"unsupported input extension: {source.suffix}")
+    try:
+        parts = load_parts(args.parts.expanduser()) if args.parts is not None else []
+    except (OSError, ValueError, OverflowError) as error:
+        parser.error(f"could not read --parts: {error}")
     output = args.output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     for item in VIEWER.iterdir():
@@ -130,7 +158,9 @@ def main(argv=None):
         "status": args.status,
         "facts": {"Source": source.name, "Format": source.suffix.lower().lstrip(".").upper()},
         "note": "Interactive viewing does not certify printability, fit, strength, or load capacity.",
-        "prompt": "Inspect the model from several angles, then send feedback or approve this exact version.",
+        "prompt": ("Use Explode to separate the assembly. Select a part to inspect it."
+                   if parts else "Inspect the model from several angles, then send feedback or approve this exact version."),
+        "parts": parts,
     }
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     url = None

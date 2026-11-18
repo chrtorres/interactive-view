@@ -1,6 +1,6 @@
 [build-system]
-requires = []
-build-backend = "setuptools.build_meta:__legacy__"
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "interactive-view"
@@ -8,5 +8,15 @@ version = "0.1.0"
 description = "Prepare local interactive Three.js previews from common 3D model files"
 requires-python = ">=3.10"
 
+[project.optional-dependencies]
+print = ["Pillow>=9"]
+
 [project.scripts]
 interactive-view = "tools.prepare_review:main"
+interactive-view-print-previews = "tools.build_print_previews:main"
+
+[tool.setuptools]
+packages = ["tools", "viewer"]
+
+[tool.setuptools.package-data]
+viewer = ["*.html", "*.css", "*.js", "*.json", "*.md"]
