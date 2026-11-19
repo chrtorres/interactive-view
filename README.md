@@ -152,3 +152,21 @@ python3 tools/prepare_review.py <fixture-directory>/fixture.glb \
 For the other fixture substitute `--kind articulated` and package it under `<served-directory>/articulated`. Its repeating clip is `Oscillate`. The one-shot `Swing` should fail the check if marked as a loop. Use `node tests/check_motion_review.mjs <served-directory-url> <evidence-directory> <playwright-module>` with Chromium installed in Playwright. An optional fourth argument is an independently authored preview URL with four timed clips and a declared follow root for comparison with the originating motion study.
 
 `bake_action` in the generator accepts a caller's Blender object, frame rate and time-to-channel function. Model-specific geometry, bone placement and the motion law belong in the caller. The binary checker accepts ordinary, dense float32 animation accessors and compares keyed values. Rotation closure treats opposite-sign quaternions as the same pose.
+
+## Combine independent reviews
+
+Use `interactive-view-combine <manifest.json> --output <new-directory>` to put prepared reviews behind one keyboard-accessible tab strip. From source use `python3 tools/combine_reviews.py`. Serve the output over HTTP. Each view loads on first visit and retains its own camera, playback and inspection state until the page reloads. Tabs can be linked with fragments such as `#parts`.
+
+```json
+{
+  "title": "Assembly study",
+  "default": "context",
+  "views": [
+    {"id": "context", "label": "Context", "directory": "prepared-context"},
+    {"id": "motion", "label": "Motion", "directory": "prepared-motion"},
+    {"id": "parts", "label": "Parts", "directory": "prepared-parts", "exploded": true}
+  ]
+}
+```
+
+Directories are resolved from the manifest and must be self-contained local review packages you intend to serve. The output must be new and outside the inputs. Directory paths are stripped from the browser manifest. Use the current preparer for generic GLB reviews. `exploded` applies to views with valid multipart metadata. Generic views suspend work while inactive and resume without elapsed-time catch-up. A custom scene can integrate the [embedding and trace helpers](viewer/README.md#workspace-lifecycle-and-path-sampling).

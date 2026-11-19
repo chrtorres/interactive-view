@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/GLTFLoader.js";
 
+import { initiallyExploded, viewActive } from "./embedding.js";
 import { createMotion } from "./motion.js";
 
 const host = document.querySelector("#viewer");
@@ -355,6 +356,7 @@ new GLTFLoader().load("model.glb", async (gltf) => {
     fit: () => frameView(camera.position.clone().sub(controls.target).normalize()),
   });
   if (motion) frameView();
+  if (initiallyExploded && !explodeButton.disabled) explodeButton.click();
   loading.classList.add("hidden");
 }, undefined, (error) => { loading.textContent = "Could not load model.glb"; console.error(error); });
 
@@ -396,6 +398,10 @@ fitRenderer();
 
 function animate(time) {
   requestAnimationFrame(animate);
+  if (!viewActive()) {
+    motion?.resetClock();
+    return;
+  }
   motion?.tick(time);
   if (transition) {
     needsFrame = true;

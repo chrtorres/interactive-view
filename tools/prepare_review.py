@@ -212,6 +212,8 @@ def main(argv=None):
     output = args.output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     for item in VIEWER.iterdir():
+        if item.name == "workspace":
+            continue
         destination = output / item.name
         if item.is_dir():
             shutil.copytree(item, destination, dirs_exist_ok=True)

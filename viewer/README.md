@@ -47,3 +47,23 @@ Optional metadata example:
 - `followNode` identifies a uniquely named scene node or bone and enables **Follow motion**. The camera and orbit target translate with its evaluated world position, keeping the current viewing direction. GLB animation drives the model.
 - `autoplay` and `loop` default to false. The browser's reduced-motion preference suppresses autoplay. Scrubbing pauses at the selected time, including the exact endpoint. Looping is best suited to clips authored with matching endpoints.
 - This viewer supports animation tracks decoded by the bundled glTF loader. Physically measured accuracy, loop continuity between keys, material animation extensions, and compressed assets that require additional decoders have separate validation or integration requirements.
+
+## Workspace lifecycle and path sampling
+
+The workspace loads each view's `index.html` in a retained same-origin frame. Custom scene packages may copy the [embedding module](embedding.js) and import `viewActive()` in their animation loop. On an inactive frame, skip GPU rendering and simulation and clear the previous playback timestamp. Keep camera, pose, and control state in the child. The adapter accepts a typed activity message from the same-origin parent. The `embedded` class is available for hiding a redundant internal masthead. Standalone views continue to render normally. The host preserves panel dimensions when inactive to avoid a resize-induced camera reset.
+
+The optional [path sampler](path-trace.js) accepts scene time in seconds and a world-space XYZ array. Use a single trace per independent clock.
+
+```js
+const path = createPathTrace({ interval: .12, duration: 12 });
+// In the active scene's update, after sampling its world-space position.
+if (path.sample(sceneTime, position.toArray())) {
+  line.geometry.dispose();
+  line.geometry = new THREE.BufferGeometry().setFromPoints(
+    path.points().map(xyz => new THREE.Vector3().fromArray(xyz))
+  );
+}
+// On scene reset or a discontinuous teleport, call path.clear().
+```
+
+Invoke `sample` with the same time used to advance the scene. Samples expire by scene time and a rewind begins a new segment. The trace records past movement. A planned course or a scrubbed clip may have a separate trajectory and clock.

@@ -12,6 +12,7 @@ requires-python = ">=3.10"
 print = ["Pillow>=9"]
 
 [project.scripts]
+interactive-view-combine = "tools.combine_reviews:main"
 interactive-view = "tools.prepare_review:main"
 interactive-view-print-previews = "tools.build_print_previews:main"
 interactive-view-compare-landmarks = "tools.compare_landmarks:main"
@@ -20,4 +21,4 @@ interactive-view-compare-landmarks = "tools.compare_landmarks:main"
 packages = ["tools", "viewer"]
 
 [tool.setuptools.package-data]
-viewer = ["*.html", "*.css", "*.js", "*.json", "*.md"]
+viewer = ["*.html", "*.css", "*.js", "*.json", "*.md", "workspace/*"]
