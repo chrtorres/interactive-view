@@ -132,3 +132,23 @@ blender -b --factory-startup --python-exit-code 1 --python tools/create_referenc
 ```
 
 Prepare its `fixture.glb` and `metadata.json` using the command above. Run `node tests/check_reference_review.mjs <review-url> <evidence-directory> <playwright-module>` with Node.js, Playwright, its Chromium installation, and an offline-prepared package to check the rendered viewer.
+
+## Prepare animated figure reviews
+
+Package any supported animated GLB through the same command. Playback controls appear for the asset's timed clips. Use optional [animation metadata](viewer/README.md#animated-models) to label clips and enable camera tracking for an authored root.
+
+Generate either a rigid articulated hinge or a skinned flexible figure with Blender 4.5 LTS.
+
+```sh
+blender -b --python-exit-code 1 --python tools/create_motion_fixture.py -- \
+  --kind flexible --output <fixture-directory>
+python3 tools/check_motion_glb.py <fixture-directory>/fixture.glb \
+  --loop Traverse --moving Traverse "Travel root" translation
+python3 tools/prepare_review.py <fixture-directory>/fixture.glb \
+  --metadata <fixture-directory>/metadata.json --three-dir <three-package-directory> \
+  --output <served-directory>/flexible --no-screenshot
+```
+
+For the other fixture substitute `--kind articulated` and package it under `<served-directory>/articulated`. Its repeating clip is `Oscillate`. The one-shot `Swing` should fail the check if marked as a loop. Use `node tests/check_motion_review.mjs <served-directory-url> <evidence-directory> <playwright-module>` with Chromium installed in Playwright. An optional fourth argument is an independently authored preview URL with four timed clips and a declared follow root for comparison with the originating motion study.
+
+`bake_action` in the generator accepts a caller's Blender object, frame rate and time-to-channel function. Model-specific geometry, bone placement and the motion law belong in the caller. The binary checker accepts ordinary, dense float32 animation accessors and compares keyed values. Rotation closure treats opposite-sign quaternions as the same pose.

@@ -60,6 +60,8 @@ class PrepareReviewTests(unittest.TestCase):
             output = root / "review"
             metadata = {
                 "title": "Reference",
+                "animation": {"defaultClip": "Bend", "followNode": "Rig root", "loop": True,
+                              "labels": {"Bend": "Sweep"}, "autoplay": False},
                 "modes": {"detail": ["Layer"]},
                 "defaultMode": "detail",
                 "modeLabels": {"detail": "Detail"},
@@ -84,6 +86,14 @@ class PrepareReviewTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("HTTP(S)", result.stderr)
+            self.assertFalse(output.exists())
+
+            metadata["parts"] = []
+            metadata["animation"]["autoplay"] = "yes"
+            spec.write_text(json.dumps(metadata))
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("animation autoplay must be a boolean", result.stderr)
             self.assertFalse(output.exists())
 
     def test_invalid_part_layout_is_rejected_before_preparation(self):

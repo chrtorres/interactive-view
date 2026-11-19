@@ -108,6 +108,21 @@ def load_metadata(path):
         not isinstance(metadata["defaultMode"], str) or metadata["defaultMode"] not in modes
     ):
         raise ValueError("defaultMode must identify a declared mode")
+    animation = metadata.get("animation", {})
+    if not isinstance(animation, dict):
+        raise ValueError("animation must be an object")
+    for key in ("defaultClip", "followNode"):
+        if key in animation and (not isinstance(animation[key], str) or not animation[key].strip()):
+            raise ValueError(f"animation {key} must be nonempty text")
+    for key in ("autoplay", "loop"):
+        if key in animation and type(animation[key]) is not bool:
+            raise ValueError(f"animation {key} must be a boolean")
+    labels = animation.get("labels", {})
+    if not isinstance(labels, dict) or any(
+        not name.strip() or not isinstance(label, str) or not label.strip()
+        for name, label in labels.items()
+    ):
+        raise ValueError("animation labels must map clip names to nonempty text")
     return metadata
 
 
@@ -135,7 +150,7 @@ bpy.ops.export_scene.gltf(filepath=destination, export_format='GLB', use_selecti
         handle.write(script)
         script_path = handle.name
     try:
-        subprocess.run([blender, "--background", "--python", script_path, "--", str(source), str(destination)], check=True)
+        subprocess.run([blender, "--background", "--python-exit-code", "1", "--python", script_path, "--", str(source), str(destination)], check=True)
     finally:
         os.unlink(script_path)
 

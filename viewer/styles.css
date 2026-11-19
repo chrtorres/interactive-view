@@ -59,3 +59,11 @@ dt { color: #8192ad; } dd { margin: 0; text-align: right; color: #e5efff; }
   .part-key { grid-row: 2; }
 }
 .part-key ol { list-style: none; padding-left: 0; }
+
+.motion { border-top: 1px solid rgba(153, 176, 220, .22); }
+.motion label { display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; }
+.motion select { max-width: min(14rem, 50vw); text-overflow: ellipsis; }
+.motion-seek { flex: 1 1 14rem; }
+.motion-seek input { flex: 1; min-width: 3rem; }
+.motion output { font-size: .8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#motion-exploded { margin: 0; font-size: .85rem; }

@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/GLTFLoader.js";
 
+import { createMotion } from "./motion.js";
+
 const host = document.querySelector("#viewer");
 const loading = document.querySelector("#loading");
 const explodeButton = document.querySelector("#explode");
@@ -37,6 +39,7 @@ controls.addEventListener("change", () => { needsFrame = true; });
 controls.update();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let model = null;
+let motion = null;
 let parts = [];
 let guides = [];
 let exploded = false;
@@ -55,6 +58,10 @@ function fitRenderer() {
 function frameView(direction = defaultDirection) {
   if (!model) return;
   const bounds = new THREE.Box3();
+  if (motion && !motion.suspended) {
+    model.updateMatrixWorld(true);
+    model.traverseVisible((node) => { if (node.isSkinnedMesh) node.computeBoundingBox(); });
+  }
   if (focusedStructure) {
     bounds.setFromObject(focusedStructure.node);
   } else {
@@ -65,6 +72,12 @@ function frameView(direction = defaultDirection) {
 
   const center = bounds.getCenter(new THREE.Vector3());
   const span = Math.max(1e-6, bounds.getSize(new THREE.Vector3()).length());
+  // Clear pending orbit deltas before moving to a newly fitted frame.
+  const damping = controls.enableDamping;
+  const autoRotate = controls.autoRotate;
+  controls.enableDamping = false;
+  controls.autoRotate = false;
+  controls.update();
   camera.position.copy(center).add(direction);
   camera.lookAt(center);
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
@@ -90,6 +103,8 @@ function frameView(direction = defaultDirection) {
   camera.position.copy(center).addScaledVector(direction, distance);
   camera.updateProjectionMatrix();
   controls.update();
+  controls.enableDamping = damping;
+  controls.autoRotate = autoRotate;
 }
 
 function notice(message) {
@@ -227,11 +242,14 @@ function updateLayout(animateParts = false) {
     node.visible = exploded ? pick === "" || index === Number(pick) : (preset?.has(node) ?? parts[index].visible);
   });
   for (const guide of guides) guide.node.visible = !exploded && (preset?.has(guide.node) ?? guide.visible);
+  motion?.apply(false);
   frameView(direction);
   transition = null;
   if (animateParts && !reducedMotion.matches) {
     transition = { starts, ends, startTime: performance.now() };
     parts.forEach(({ node }, index) => node.position.copy(starts[index]));
+  } else if (!exploded) {
+    motion?.setSuspended(false);
   }
 }
 function updatePartLabels() {
@@ -290,6 +308,8 @@ function updatePartLabels() {
 export function inspectLayout() {
   return {
     moving: transition !== null,
+    motion: motion?.inspect(),
+    frame: renderer.info.render.frame,
     camera: camera.position.toArray(),
     nodes: (model?.children || []).map(node => ({
       name: node.name, visible: node.visible, position: node.position.toArray(),
@@ -329,11 +349,18 @@ new GLTFLoader().load("model.glb", async (gltf) => {
   registerPresets(metadata);
   scene.add(model);
   updateLayout();
+  motion = createMotion(model, gltf.animations, metadata.animation || {}, {
+    camera, controls, reducedMotion, notice,
+    redraw: () => { needsFrame = true; },
+    fit: () => frameView(camera.position.clone().sub(controls.target).normalize()),
+  });
+  if (motion) frameView();
   loading.classList.add("hidden");
 }, undefined, (error) => { loading.textContent = "Could not load model.glb"; console.error(error); });
 
 explodeButton.addEventListener("click", () => {
   exploded = !exploded;
+  if (exploded) motion?.setSuspended(true);
   explodeButton.textContent = exploded ? "Reassemble" : "Explode";
   explodeButton.setAttribute("aria-pressed", String(exploded));
   inspection.hidden = !exploded;
@@ -369,6 +396,7 @@ fitRenderer();
 
 function animate(time) {
   requestAnimationFrame(animate);
+  motion?.tick(time);
   if (transition) {
     needsFrame = true;
     const amount = THREE.MathUtils.smoothstep(time - transition.startTime, 0, 320);
@@ -379,7 +407,10 @@ function animate(time) {
         node.position.lerpVectors(transition.starts[index], transition.ends[index], amount);
       }
     });
-    if (amount === 1) transition = null;
+    if (amount === 1) {
+      transition = null;
+      if (!exploded) motion?.setSuspended(false);
+    }
   }
   controls.update();
   if (needsFrame) {
@@ -389,3 +420,5 @@ function animate(time) {
   }
 }
 requestAnimationFrame(animate);
+
+document.addEventListener("visibilitychange", () => motion?.resetClock());

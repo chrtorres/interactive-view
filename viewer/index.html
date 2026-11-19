@@ -32,6 +32,20 @@
           </div>
           <p id="part-status" role="status" hidden></p>
         </div>
+        <div id="motion" class="toolbar motion" aria-label="Animation playback" hidden>
+          <label>Clip <select id="clip"></select></label>
+          <button id="play-motion" type="button">Play</button>
+          <label class="motion-seek">Time <input id="motion-time" type="range" min="0" step="any" value="0" />
+            <output id="motion-clock" for="motion-time"></output>
+          </label>
+          <label>Speed <select id="motion-speed">
+            <option value=".25">0.25×</option><option value=".5">0.5×</option>
+            <option value="1" selected>1×</option><option value="2">2×</option>
+          </select></label>
+          <label><input id="motion-loop" type="checkbox" /> Loop</label>
+          <label id="motion-follow-label" hidden><input id="motion-follow" type="checkbox" /> Follow motion</label>
+          <p id="motion-exploded" hidden>Reassemble to inspect animation.</p>
+        </div>
       </section>
       <aside id="part-key" class="part-key" hidden aria-label="Exploded part key"><h2>Exploded parts</h2><ol></ol></aside>
       <aside class="info-card">
