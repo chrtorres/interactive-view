@@ -7,3 +7,5 @@ The template uses Three.js 0.180.0 and its `OrbitControls`/`GLTFLoader` modules 
 For multipart models, export one uniquely named top-level GLB node per inspectable part. In `metadata.json`, give each part a `node` (its GLB name), a `label` (its picker label), and an `offset` (three translation components in GLB parent coordinates and units). Use an empty `parts` array for a single-part model. Unlisted top-level nodes are treated as assembly guides and hidden while exploded.
 
 **Explode** reveals **Inspect part**. Choose a piece to isolate and frame it, **All parts** for the full exploded view, or **Reassemble** to restore the assembled positions and guides.
+
+When `parts` is populated, exploded mode also renders numbered, clickable callouts with leader lines and an accessible part key. Keep one stable, uniquely named top-level node per inspectable part; labels are hidden in assembled mode and restore automatically on reassembly. The generic viewer does not infer hidden geometry or certify visual fidelity.

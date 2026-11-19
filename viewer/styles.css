@@ -6,6 +6,15 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0
 .viewer-card { overflow: hidden; }
 .viewer { height: min(78vh, 760px); min-height: 520px; position: relative; background: radial-gradient(circle at 50% 42%, #263852 0, #111923 58%, #0b1018 100%); }
 .viewer canvas { display: block; width: 100%; height: 100%; }
+.part-leaders { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.part-labels { position: absolute; inset: 0; pointer-events: none; }
+.part-label { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; border: 1px solid #8bc3ff; border-radius: 999px; min-width: 28px; height: 28px; padding: 0 9px; background: rgba(12, 28, 48, .94); color: #f1f7ff; font: 700 12px/26px Inter, sans-serif; text-align: center; white-space: nowrap; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+.part-label:hover, .part-label:focus-visible { background: #2d5b91; outline: 2px solid #b9dcff; outline-offset: 2px; }
+.part-key { grid-column: 1 / -1; border: 1px solid #2d3b54; border-radius: 14px; padding: 12px 16px; background: rgba(15, 21, 32, .9); }
+.part-key h2 { margin: 0 0 8px; font-size: 14px; }
+.part-key ol { display: flex; flex-wrap: wrap; gap: 5px 22px; margin: 0; padding-left: 24px; color: #c8d9ee; font-size: 12px; }
+.part-key li { min-width: 150px; padding: 2px 0; }
+.part-key button { border: 0; padding: 0; background: transparent; color: inherit; font-size: inherit; cursor: pointer; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: #a9bbd8; letter-spacing: .02em; }
 .loading.hidden { display: none; }
 .viewer-help { position: absolute; left: 18px; bottom: 16px; color: #9cadc8; font-size: 12px; pointer-events: none; }
@@ -29,4 +38,4 @@ dt { color: #8192ad; } dd { margin: 0; text-align: right; color: #e5efff; }
 .note { padding: 14px; border-radius: 12px; background: #16253a; border: 1px solid #29476e; font-size: 13px; line-height: 1.45; }
 .note p, .review-prompt { margin-bottom: 0; color: #aebed5; }
 .review-prompt { font-size: 13px; line-height: 1.5; }
-@media (max-width: 900px) { .app-shell { grid-template-columns: 1fr; padding: 14px; align-items: start; } .viewer { min-height: 62vh; height: 62vh; } }
+@media (max-width: 900px) { .app-shell { grid-template-columns: 1fr; padding: 14px; align-items: start; } .viewer { min-height: 62vh; height: 62vh; } .part-key { grid-column: auto; } .part-label { max-width: 145px; overflow: hidden; text-overflow: ellipsis; } }

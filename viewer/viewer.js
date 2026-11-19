@@ -8,6 +8,10 @@ const explodeButton = document.querySelector("#explode");
 const inspection = document.querySelector("#part-inspection");
 const partPicker = document.querySelector("#part");
 const partStatus = document.querySelector("#part-status");
+const labelLayer = document.querySelector("#part-labels");
+const leaderLayer = document.querySelector("#part-leaders");
+const partKey = document.querySelector("#part-key");
+const partKeyList = partKey.querySelector("ol");
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 2000);
 const defaultDirection = new THREE.Vector3(0, 0.95, 1.15).normalize();
@@ -24,6 +28,7 @@ const key = new THREE.DirectionalLight(0xffffff, 4.0); key.position.set(260, -30
 const rim = new THREE.DirectionalLight(0x4b9cff, 3.0); rim.position.set(-300, 260, 150); scene.add(rim);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.06; controls.enablePan = true;
+controls.addEventListener("change", schedulePartLabels);
 controls.update();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let model = null;
@@ -31,6 +36,7 @@ let parts = [];
 let guides = [];
 let exploded = false;
 let transition = null;
+let labelUpdateQueued = false;
 const materials = new Set();
 
 function fitRenderer() {
@@ -108,6 +114,14 @@ function registerParts(definitions = []) {
     const assembled = part.node.position.clone();
     return { ...part, assembled, separated: assembled.clone().add(part.offset) };
   });
+  partKeyList.replaceChildren();
+  parts.forEach((part, index) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button"; button.textContent = `${index + 1}. ${part.label}`;
+    button.addEventListener("click", () => { partPicker.value = String(index); updateLayout(); });
+    item.append(button); partKeyList.append(item);
+  });
   const printable = new Set(parts.map(({ node }) => node));
   guides = model.children.filter((node) => !printable.has(node))
     .map((node) => ({ node, visible: node.visible }));
@@ -124,12 +138,43 @@ function updateLayout(animateParts = false) {
     node.visible = !exploded || pick === "" || index === Number(pick);
   });
   for (const guide of guides) guide.node.visible = !exploded && guide.visible;
+  partKey.hidden = !exploded;
   frameView(direction);
   transition = null;
   if (animateParts && !reducedMotion.matches) {
     transition = { starts, ends, startTime: performance.now() };
     parts.forEach(({ node }, index) => node.position.copy(starts[index]));
   }
+}
+function updatePartLabels() {
+  const rect = host.getBoundingClientRect();
+  labelLayer.replaceChildren(); leaderLayer.replaceChildren();
+  if (!exploded || !parts.length || !rect.width || !rect.height) return;
+  leaderLayer.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+  const selected = partPicker.value;
+  parts.forEach((part, index) => {
+    if (selected !== "" && selected !== String(index)) return;
+    const point = new THREE.Box3().setFromObject(part.node).getCenter(new THREE.Vector3()).project(camera);
+    if (point.z < -1 || point.z > 1) return;
+    const x = (point.x * .5 + .5) * rect.width;
+    const y = (-point.y * .5 + .5) * rect.height;
+    const label = document.createElement("button"); label.className = "part-label"; label.type = "button";
+    label.textContent = `${index + 1}. ${part.label}`; label.title = part.label; label.setAttribute("aria-label", `Inspect ${part.label}`);
+    const labelX = Math.max(42, Math.min(rect.width - 42, x + 42));
+    const labelY = Math.max(24, Math.min(rect.height - 24, y - 24));
+    label.style.left = `${labelX}px`; label.style.top = `${labelY}px`;
+    label.addEventListener("click", () => { partPicker.value = String(index); updateLayout(); });
+    labelLayer.append(label);
+    const lx = labelX, ly = labelY;
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", String(x)); line.setAttribute("y1", String(y)); line.setAttribute("x2", String(lx)); line.setAttribute("y2", String(ly)); line.setAttribute("stroke", "#8bc3ff"); line.setAttribute("stroke-width", "1.2"); line.setAttribute("opacity", ".8");
+    leaderLayer.append(line);
+  });
+}
+function schedulePartLabels() {
+  if (labelUpdateQueued) return;
+  labelUpdateQueued = true;
+  requestAnimationFrame(() => { labelUpdateQueued = false; updatePartLabels(); });
 }
 function renderMetadata(metadata) {
   document.querySelector("#title").textContent = metadata.title || "3D model review";
@@ -161,6 +206,7 @@ new GLTFLoader().load("model.glb", async (gltf) => {
   registerParts(metadata.parts);
   scene.add(model);
   frameView();
+  updateLayout();
   loading.classList.add("hidden");
 }, undefined, (error) => { loading.textContent = "Could not load model.glb"; console.error(error); });
 
@@ -206,6 +252,7 @@ function animate(time) {
     });
     if (amount === 1) transition = null;
   }
+  updatePartLabels();
   controls.update();
   renderer.render(scene, camera);
 }
