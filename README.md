@@ -44,6 +44,34 @@ python3 -m tools.prepare_review assembly.glb --parts parts.json --output review
 
 Choose **Explode** to separate the parts, **Inspect part** to isolate and frame a piece, or **All parts** to return to the exploded overview. **Reassemble** restores the original positions and any assembly guides. When no part layout is supplied, the other viewer controls remain available.
 
+## Photo-based refinement
+
+Use reference photos and published dimensions to refine a model, then prepare a multipart review of each revision. Record the source, model revision, datum, and the view used for each measurement. Calibrate each image axis with a known dimension in the same plane, or rectify the image first. Keep matched top, side, or underside renders and an exploded view alongside the results. Mark hidden geometry and dimensions inferred from perspective as estimates.
+
+The landmark tool reads world-space XYZ bounds in millimeters from your modeling script. A synthetic geometry input looks like this:
+
+```json
+{"units": "mm", "part_bounds_xyz_mm": {"Plate": [[-20, 0, 0], [20, 20, 3]]}}
+```
+
+Provide a separate landmark list. Readings for `center`, `min`, and `max` are signed pixel offsets from the aligned datum. `span` is a width along the indicated axis. Use `fit` for measurements used to tune the model and `holdout` for independent checks.
+
+```json
+[
+  {
+    "feature": "Plate width", "part": "Plate", "axis": "x", "kind": "span",
+    "basis": "fit", "reading_px": 80, "allowance_px": 2,
+    "calibration": {"span_px": 80, "span_mm": 40}
+  }
+]
+```
+
+```sh
+python3 -m tools.compare_landmarks geometry.json landmarks.json > landmark-report.json
+```
+
+The installed command is `interactive-view-compare-landmarks`. The report gives per-feature errors and pixel-reading allowances converted to millimeters. Perspective, depth, and calibration uncertainty require separate assessment. Whole-model fidelity requires a defined metric and independent surface coverage. Review the same revision with Explode, Inspect part, and Reassemble to verify viewer behavior.
+
 ## Print-part preview sheets
 
 Generate an exploded sheet and an individual-part sheet from the actual print STLs. The print manifest specifies the display order, file identity, and offsets. Each file path is relative to the manifest. Offsets are in STL XYZ axes and millimeters. Pieces should share assembly axes. For a mesh moved for print placement, add an optional `assembly_translation` to recover its assembly position before applying the display offset.

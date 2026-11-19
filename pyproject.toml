@@ -14,6 +14,7 @@ print = ["Pillow>=9"]
 [project.scripts]
 interactive-view = "tools.prepare_review:main"
 interactive-view-print-previews = "tools.build_print_previews:main"
+interactive-view-compare-landmarks = "tools.compare_landmarks:main"
 
 [tool.setuptools]
 packages = ["tools", "viewer"]
