@@ -51,6 +51,41 @@ class PrepareReviewTests(unittest.TestCase):
             self.assertEqual(metadata["parts"], parts)
             self.assertIn("Explode", metadata["prompt"])
 
+    def test_reference_metadata_round_trips_through_cli(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            source = root / "sample.glb"
+            source.write_bytes(b"synthetic-glb-fixture")
+            spec = root / "spec.json"
+            output = root / "review"
+            metadata = {
+                "title": "Reference",
+                "modes": {"detail": ["Layer"]},
+                "defaultMode": "detail",
+                "modeLabels": {"detail": "Detail"},
+                "parts": [
+                    {"node": "Layer", "label": "Layer", "offset": [1, 0, 0],
+                     "structures": [{"node": "Child", "label": "Child"}],
+                     "evidence": "Illustrative", "sources": [{"label": "Reference", "url": "https://example.org/"}]},
+                    {"node": "Case", "label": "Case", "offset": [-1, 0, 0]},
+                ],
+            }
+            spec.write_text(json.dumps(metadata))
+            command = [sys.executable, str(TOOL), str(source), "--output", str(output),
+                       "--metadata", str(spec), "--no-screenshot"]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for key, value in metadata.items():
+                self.assertEqual(json.loads((output / "metadata.json").read_text())[key], value)
+            output = root / "invalid"
+            command[4] = str(output)
+            metadata["parts"][0]["sources"][0]["url"] = "javascript:alert(1)"
+            spec.write_text(json.dumps(metadata))
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("HTTP(S)", result.stderr)
+            self.assertFalse(output.exists())
+
     def test_invalid_part_layout_is_rejected_before_preparation(self):
         first = {"node": "Plate", "label": "Plate", "offset": [0, 0, 0]}
         layouts = (

@@ -112,3 +112,23 @@ This is a geometry review tool. It does not validate meshes, slice models, certi
 python3 -m unittest discover -s tests -v
 python3 -m py_compile tools/prepare_review.py
 ```
+
+## Source-linked layered inspection
+
+Prepare a package from an existing GLB and the review metadata that describes its scene.
+
+```sh
+python3 tools/prepare_review.py <model.glb> --metadata <metadata.json> \
+  --output <review-directory> --no-screenshot
+python3 -m http.server <port> --bind 127.0.0.1 --directory <review-directory>
+```
+
+Add `--three-dir <three-package-directory>` to bundle the pinned Three.js modules for offline review. Get the matching package with `npm pack three@0.180.0` and extract it to an isolated dependency directory. The existing `--parts` option can also override the part list. See the [viewer metadata contract](viewer/README.md).
+
+For a runnable example, generate the synthetic cube-and-ring assembly with Blender 4.5 LTS. The fixture includes two presets, nested parts, an intentionally unlisted child, and an example citation.
+
+```sh
+blender -b --factory-startup --python-exit-code 1 --python tools/create_reference_fixture.py -- <fixture-directory>
+```
+
+Prepare its `fixture.glb` and `metadata.json` using the command above. Run `node tests/check_reference_review.mjs <review-url> <evidence-directory> <playwright-module>` with Node.js, Playwright, its Chromium installation, and an offline-prepared package to check the rendered viewer.

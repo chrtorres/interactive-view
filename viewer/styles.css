@@ -39,3 +39,23 @@ dt { color: #8192ad; } dd { margin: 0; text-align: right; color: #e5efff; }
 .note p, .review-prompt { margin-bottom: 0; color: #aebed5; }
 .review-prompt { font-size: 13px; line-height: 1.5; }
 @media (max-width: 900px) { .app-shell { grid-template-columns: 1fr; padding: 14px; align-items: start; } .viewer { min-height: 62vh; height: 62vh; } .part-key { grid-column: auto; } .part-label { max-width: 145px; overflow: hidden; text-overflow: ellipsis; } }
+
+#mode-control:not([hidden]), #structure-control:not([hidden]) { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+#mode { border: 1px solid #456184; border-radius: 9px; color: inherit; background: #131e31; padding: 8px; }
+#structure { max-width: min(290px, 65vw); }
+.review-detail { margin-top: 15px; padding: 12px; border: 1px solid #2d3b54; border-radius: 11px; overflow-wrap: anywhere; }
+.review-detail h2 { font-size: 14px; margin: 0; }
+.review-detail p, .review-detail ul { font-size: 13px; line-height: 1.5; margin: 6px 0 0; }
+.review-detail ul { padding-left: 18px; }
+.review-detail a { color: #afd6ff; }
+.part-label.rail-0,.part-label.rail-1 { transform: translateY(-50%); }
+.part-label.rail-0 { left: 6px; }
+.part-label.rail-1 { right: 6px; }
+.part-leaders line { stroke: #8bc3ff; stroke-width: 1.2; opacity: .8; }
+@media (max-width: 900px) { .part-label span { display: none; } }
+@media (min-width: 901px) {
+  .viewer-card { grid-column: 1; grid-row: 1; min-width: 0; }
+  .info-card { grid-column: 2; grid-row: 1; min-width: 0; align-self: start; }
+  .part-key { grid-row: 2; }
+}
+.part-key ol { list-style: none; padding-left: 0; }

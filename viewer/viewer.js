@@ -7,10 +7,14 @@ const loading = document.querySelector("#loading");
 const explodeButton = document.querySelector("#explode");
 const inspection = document.querySelector("#part-inspection");
 const partPicker = document.querySelector("#part");
+const modePicker = document.querySelector("#mode");
+const structurePicker = document.querySelector("#structure");
 const partStatus = document.querySelector("#part-status");
 const labelLayer = document.querySelector("#part-labels");
 const leaderLayer = document.querySelector("#part-leaders");
 const partKey = document.querySelector("#part-key");
+const showPartLabels = document.querySelector("#show-part-labels");
+showPartLabels.addEventListener("change", updatePartLabels);
 const partKeyList = partKey.querySelector("ol");
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 2000);
@@ -26,9 +30,10 @@ host.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xa9caff, 0x172033, 2.2));
 const key = new THREE.DirectionalLight(0xffffff, 4.0); key.position.set(260, -300, 420); scene.add(key);
 const rim = new THREE.DirectionalLight(0x4b9cff, 3.0); rim.position.set(-300, 260, 150); scene.add(rim);
+let needsFrame = true;
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; controls.dampingFactor = 0.06; controls.enablePan = true;
-controls.addEventListener("change", schedulePartLabels);
+controls.addEventListener("change", () => { needsFrame = true; });
 controls.update();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let model = null;
@@ -36,10 +41,13 @@ let parts = [];
 let guides = [];
 let exploded = false;
 let transition = null;
-let labelUpdateQueued = false;
+let presets = new Map();
+let selectedPart = null;
+let focusedStructure = null;
 const materials = new Set();
 
 function fitRenderer() {
+  needsFrame = true;
   const rect = host.getBoundingClientRect();
   renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height), false);
   camera.aspect = rect.width / Math.max(1, rect.height); camera.updateProjectionMatrix();
@@ -47,13 +55,12 @@ function fitRenderer() {
 function frameView(direction = defaultDirection) {
   if (!model) return;
   const bounds = new THREE.Box3();
-  if (exploded) {
-    for (const { node } of parts) {
-      if (node.visible) bounds.expandByObject(node);
-    }
+  if (focusedStructure) {
+    bounds.setFromObject(focusedStructure.node);
   } else {
-    bounds.setFromObject(model);
+    for (const node of model.children) if (node.visible) bounds.expandByObject(node);
   }
+  needsFrame = true;
   if (bounds.isEmpty()) return;
 
   const center = bounds.getCenter(new THREE.Vector3());
@@ -85,6 +92,30 @@ function frameView(direction = defaultDirection) {
   controls.update();
 }
 
+function notice(message) {
+  partStatus.textContent = [partStatus.textContent, message].filter(Boolean).join(" ");
+  partStatus.hidden = false;
+}
+
+function registerPresets(metadata) {
+  const definitions = metadata.modes;
+  if (!definitions || typeof definitions !== "object" || Array.isArray(definitions)) return;
+  const nodes = new Map(model.children.map(node => [node.name, node]));
+  for (const [id, names] of Object.entries(definitions)) {
+    const group = Array.isArray(names) && names.map(name => typeof name === "string" &&
+      nodes.get(THREE.PropertyBinding.sanitizeNodeName(name)));
+    if (!group || group.length === 0 || group.some(node => !node) || new Set(group).size !== group.length) {
+      notice("A view preset references missing or duplicate top-level nodes.");
+      continue;
+    }
+    presets.set(id, new Set(group));
+    modePicker.add(new Option(metadata.modeLabels?.[id] || id.replace(/[-_]/g, " ").replace(/^./, letter => letter.toUpperCase()), id));
+  }
+  if (!presets.size) return;
+  modePicker.value = presets.has(metadata.defaultMode) ? metadata.defaultMode : presets.keys().next().value;
+  document.querySelector("#mode-control").hidden = false;
+}
+
 function registerParts(definitions = []) {
   if (Array.isArray(definitions) && definitions.length === 0) return;
   const valid = Array.isArray(definitions) && definitions.length >= 2 && definitions.every((part) =>
@@ -97,9 +128,9 @@ function registerParts(definitions = []) {
     return;
   }
   const byName = new Map(model.children.map((node) => [node.name, node]));
-  const entries = definitions.map(({ node: name, label, offset }) => ({
+  const entries = definitions.map(({ node: name, label, offset, structures, description, evidence, sources }) => ({
     node: byName.get(THREE.PropertyBinding.sanitizeNodeName(name)),
-    label,
+    label, structures, description, evidence, sources,
     offset: new THREE.Vector3(...offset),
   }));
   if (entries.some(({ node }) => !node || !node.getObjectByProperty("isMesh", true)) ||
@@ -112,7 +143,21 @@ function registerParts(definitions = []) {
   parts = entries.map((part, index) => {
     partPicker.add(new Option(part.label, String(index)));
     const assembled = part.node.position.clone();
-    return { ...part, assembled, separated: assembled.clone().add(part.offset) };
+    const children = new Map(part.node.children.filter(node => node.getObjectByProperty("isMesh", true))
+      .map(node => [node.name, node]));
+    const structures = [];
+    for (const entry of Array.isArray(part.structures) ? part.structures : []) {
+      const node = typeof entry?.node === "string" && children.get(THREE.PropertyBinding.sanitizeNodeName(entry.node));
+      if (!node || structures.some(item => item.node === node)) {
+        notice(`Check structure names for ${part.label}.`);
+        continue;
+      }
+      structures.push({ node, label: entry.label || entry.node });
+    }
+    const anchor = part.node.worldToLocal(new THREE.Box3().setFromObject(part.node).getCenter(new THREE.Vector3()));
+    return { ...part, structures, assembled, separated: assembled.clone().add(part.offset), anchor,
+             visible: part.node.visible, childVisibility: part.node.children.map(node => [node, node.visible]) };
+
   });
   partKeyList.replaceChildren();
   parts.forEach((part, index) => {
@@ -128,17 +173,60 @@ function registerParts(definitions = []) {
   explodeButton.disabled = false;
 }
 
+function inspect(part) {
+  if (part !== selectedPart) {
+    // Restore original child visibility before relinquishing the isolated group.
+    for (const [node, visible] of selectedPart?.childVisibility || []) node.visible = visible;
+    selectedPart = part;
+    structurePicker.replaceChildren(new Option("All structures", ""));
+    for (const [index, item] of (part?.structures || []).entries()) {
+      structurePicker.add(new Option(item.label, String(index)));
+    }
+  }
+  focusedStructure = structurePicker.value === "" ? null : part.structures[Number(structurePicker.value)];
+  for (const [node, visible] of part?.childVisibility || []) node.visible = focusedStructure ? focusedStructure.node === node : visible;
+  document.querySelector("#structure-control").hidden = !part?.structures.length;
+  document.querySelector("#selection").hidden = !part;
+  document.querySelector("#selection-title").textContent = focusedStructure?.label || part?.label || "";
+  document.querySelector("#description").textContent = part?.description || "";
+
+  const preset = presets.get(modePicker.value);
+  const reference = part || (!exploded && preset
+    ? parts.find(item => preset.has(item.node) && (item.evidence || item.sources?.length))
+    : null);
+  const links = document.querySelector("#sources");
+  links.replaceChildren();
+  for (const source of Array.isArray(reference?.sources) ? reference.sources : []) {
+    if (typeof source?.label !== "string" || typeof source.url !== "string") continue;
+    // Metadata is user-supplied. Only ordinary web links can become clickable.
+    let url;
+    try { url = new URL(source.url); } catch { continue; }
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) continue;
+    const item = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = url.href;
+    link.textContent = source.label;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    item.append(link);
+    links.append(item);
+  }
+  document.querySelector("#reference").hidden = !reference?.evidence && !links.childElementCount;
+  document.querySelector("#evidence").textContent = reference?.evidence || "";
+}
+
 function updateLayout(animateParts = false) {
   const direction = camera.position.clone().sub(controls.target).normalize();
   const starts = parts.map(({ node }) => node.position.clone());
   const ends = parts.map((part) => exploded ? part.separated : part.assembled);
   const pick = partPicker.value;
+  inspect(exploded && pick !== "" ? parts[Number(pick)] : null);
+  const preset = presets.get(modePicker.value);
   parts.forEach(({ node }, index) => {
     node.position.copy(ends[index]);
-    node.visible = !exploded || pick === "" || index === Number(pick);
+    node.visible = exploded ? pick === "" || index === Number(pick) : (preset?.has(node) ?? parts[index].visible);
   });
-  for (const guide of guides) guide.node.visible = !exploded && guide.visible;
-  partKey.hidden = !exploded;
+  for (const guide of guides) guide.node.visible = !exploded && (preset?.has(guide.node) ?? guide.visible);
   frameView(direction);
   transition = null;
   if (animateParts && !reducedMotion.matches) {
@@ -147,34 +235,67 @@ function updateLayout(animateParts = false) {
   }
 }
 function updatePartLabels() {
+  const labelsVisible = exploded && showPartLabels.checked;
+  labelLayer.style.visibility = labelsVisible ? "" : "hidden";
+  leaderLayer.style.visibility = labelsVisible ? "" : "hidden";
+  partKey.hidden = !labelsVisible;
   const rect = host.getBoundingClientRect();
   labelLayer.replaceChildren(); leaderLayer.replaceChildren();
-  if (!exploded || !parts.length || !rect.width || !rect.height) return;
+  if (!labelsVisible || !parts.length || !rect.width || !rect.height) return;
   leaderLayer.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
   const selected = partPicker.value;
+  const points = [[], []];
   parts.forEach((part, index) => {
     if (selected !== "" && selected !== String(index)) return;
-    const point = new THREE.Box3().setFromObject(part.node).getCenter(new THREE.Vector3()).project(camera);
+    const point = focusedStructure
+      ? new THREE.Box3().setFromObject(focusedStructure.node).getCenter(new THREE.Vector3())
+      : part.node.localToWorld(part.anchor.clone());
+    point.project(camera);
     if (point.z < -1 || point.z > 1) return;
     const x = (point.x * .5 + .5) * rect.width;
     const y = (-point.y * .5 + .5) * rect.height;
-    const label = document.createElement("button"); label.className = "part-label"; label.type = "button";
-    label.textContent = `${index + 1}. ${part.label}`; label.title = part.label; label.setAttribute("aria-label", `Inspect ${part.label}`);
-    const labelX = Math.max(42, Math.min(rect.width - 42, x + 42));
-    const labelY = Math.max(24, Math.min(rect.height - 24, y - 24));
-    label.style.left = `${labelX}px`; label.style.top = `${labelY}px`;
-    label.addEventListener("click", () => { partPicker.value = String(index); updateLayout(); });
-    labelLayer.append(label);
-    const lx = labelX, ly = labelY;
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    line.setAttribute("x1", String(x)); line.setAttribute("y1", String(y)); line.setAttribute("x2", String(lx)); line.setAttribute("y2", String(ly)); line.setAttribute("stroke", "#8bc3ff"); line.setAttribute("stroke-width", "1.2"); line.setAttribute("opacity", ".8");
-    leaderLayer.append(line);
+    points[x < rect.width/2 ? 0 : 1].push({part,index,x,y});
   });
+  // Side rails prevent labels on nearby parts from covering one another.
+  for (const [side, entries] of points.entries()) {
+    entries.sort((a,b) => a.y-b.y);
+    const step = Math.min(28,(rect.height-58)/Math.max(1,entries.length));
+    let previous = 20-step;
+    for (const [i,{part,index,x,y}] of entries.entries()) {
+      const labelY = THREE.MathUtils.clamp(y,previous+step,rect.height-38-(entries.length-i-1)*step);
+      previous = labelY;
+      const label = document.createElement("button");
+      label.className = `part-label rail-${side}`;
+      label.type = "button";
+      label.textContent = `${index + 1}`;
+      const name = document.createElement("span");
+      name.textContent = `. ${part.label}`;
+      label.append(name);
+      label.title = part.label;
+      label.setAttribute("aria-label", `Inspect ${part.label}`);
+      label.style.top = `${labelY}px`;
+      label.addEventListener("click", () => { partPicker.value = String(index); updateLayout(); });
+      labelLayer.append(label);
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      const rail = label.offsetWidth+6;
+      for (const [key,value] of Object.entries({x1:x,y1:y,x2:side ? rect.width-rail : rail,y2:labelY})) {
+        line.setAttribute(key,String(value));
+      }
+      leaderLayer.append(line);
+    }
+  }
 }
-function schedulePartLabels() {
-  if (labelUpdateQueued) return;
-  labelUpdateQueued = true;
-  requestAnimationFrame(() => { labelUpdateQueued = false; updatePartLabels(); });
+
+// Read-only scene state for browser regression checks.
+export function inspectLayout() {
+  return {
+    moving: transition !== null,
+    camera: camera.position.toArray(),
+    nodes: (model?.children || []).map(node => ({
+      name: node.name, visible: node.visible, position: node.position.toArray(),
+      children: node.children.map(child => ({ name: child.name, visible: child.visible })),
+    })),
+  };
 }
 function renderMetadata(metadata) {
   document.querySelector("#title").textContent = metadata.title || "3D model review";
@@ -204,8 +325,9 @@ new GLTFLoader().load("model.glb", async (gltf) => {
   });
   const metadata = await metadataRequest;
   registerParts(metadata.parts);
+  if (!parts.length) guides = model.children.map(node => ({ node, visible: node.visible }));
+  registerPresets(metadata);
   scene.add(model);
-  frameView();
   updateLayout();
   loading.classList.add("hidden");
 }, undefined, (error) => { loading.textContent = "Could not load model.glb"; console.error(error); });
@@ -219,6 +341,11 @@ explodeButton.addEventListener("click", () => {
   updateLayout(true);
 });
 partPicker.addEventListener("change", () => updateLayout());
+structurePicker.addEventListener("change", () => updateLayout());
+modePicker.addEventListener("change", () => {
+  if (exploded) explodeButton.click();
+  else updateLayout();
+});
 document.querySelector("#reset").addEventListener("click", () => {
   if (transition) updateLayout();
   frameView();
@@ -231,6 +358,7 @@ document.querySelector("#wireframe").addEventListener("click", (event) => {
   const enabled = event.currentTarget.getAttribute("aria-pressed") !== "true";
   event.currentTarget.setAttribute("aria-pressed", String(enabled));
   for (const material of materials) material.wireframe = enabled;
+  needsFrame = true;
 });
 window.addEventListener("resize", () => {
   fitRenderer();
@@ -242,6 +370,7 @@ fitRenderer();
 function animate(time) {
   requestAnimationFrame(animate);
   if (transition) {
+    needsFrame = true;
     const amount = THREE.MathUtils.smoothstep(time - transition.startTime, 0, 320);
     parts.forEach(({ node }, index) => {
       if (amount === 1) {
@@ -252,8 +381,11 @@ function animate(time) {
     });
     if (amount === 1) transition = null;
   }
-  updatePartLabels();
   controls.update();
-  renderer.render(scene, camera);
+  if (needsFrame) {
+    renderer.render(scene, camera);
+    updatePartLabels();
+    needsFrame = false;
+  }
 }
 requestAnimationFrame(animate);

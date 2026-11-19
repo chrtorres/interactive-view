@@ -14,6 +14,7 @@ import tempfile
 import threading
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +38,9 @@ def find_blender(explicit=None):
 
 def load_parts(path):
     parts = json.loads(path.read_text(encoding="utf-8"))
+    return validate_parts(parts)
+
+def validate_parts(parts):
     if not isinstance(parts, list) or len(parts) == 1:
         raise ValueError("expected an array with zero or at least two parts")
     names = set()
@@ -54,7 +58,57 @@ def load_parts(path):
             type(value) in (int, float) and math.isfinite(value) for value in offset
         )):
             raise ValueError(f"part {index} needs three finite offset components")
-    return [{key: part[key] for key in ("node", "label", "offset")} for part in parts]
+        structures = part.get("structures", [])
+        if not isinstance(structures, list) or any(
+            not isinstance(item, dict) or any(not isinstance(item.get(key), str) or not item[key].strip()
+                                               for key in ("node", "label")) for item in structures
+        ) or len({item["node"] for item in structures}) != len(structures):
+            raise ValueError(f"part {index} needs uniquely named structures")
+        for key in ("description", "evidence"):
+            if key in part and not isinstance(part[key], str):
+                raise ValueError(f"part {index} {key} must be text")
+        sources = part.get("sources", [])
+        if not isinstance(sources, list):
+            raise ValueError(f"part {index} sources must be an array")
+        for item in sources:
+            if not isinstance(item, dict) or any(not isinstance(item.get(key), str) or not item[key].strip()
+                                                for key in ("label", "url")):
+                raise ValueError(f"part {index} source needs a label and URL")
+            url = urlsplit(item["url"])
+            if url.scheme not in ("https", "http") or not url.hostname or url.username is not None:
+                raise ValueError(f"part {index} source must be an HTTP(S) URL without credentials")
+    return parts
+
+
+THREE_FILES = (
+    "LICENSE", "build/three.module.js", "build/three.core.js",
+    "examples/jsm/controls/OrbitControls.js", "examples/jsm/loaders/GLTFLoader.js",
+    "examples/jsm/utils/BufferGeometryUtils.js",
+)
+THREE_CDN = "https://cdn.jsdelivr.net/npm/three@0.180.0/"
+
+
+def load_metadata(path):
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata must be an object")
+    validate_parts(metadata.get("parts", []))
+    modes = metadata.get("modes", {})
+    if not isinstance(modes, dict) or any(
+        not key.strip() or not isinstance(nodes, list) or not nodes or
+        any(not isinstance(name, str) or not name.strip() for name in nodes) or
+        len(set(nodes)) != len(nodes) for key, nodes in modes.items()
+    ):
+        raise ValueError("modes must map names to nonempty lists of unique top-level nodes")
+    labels = metadata.get("modeLabels", {})
+    if not isinstance(labels, dict) or any(key not in modes or not isinstance(name, str) or not name.strip()
+                                          for key, name in labels.items()):
+        raise ValueError("modeLabels must map existing modes to text labels")
+    if "defaultMode" in metadata and (
+        not isinstance(metadata["defaultMode"], str) or metadata["defaultMode"] not in modes
+    ):
+        raise ValueError("defaultMode must identify a declared mode")
+    return metadata
 
 
 def export_with_blender(source, destination, blender):
@@ -119,7 +173,9 @@ def main(argv=None):
     parser.add_argument("input", type=Path, help=".glb, .blend, .stl, .obj, or .ply model file")
     parser.add_argument("--output", type=Path, required=True, help="review package directory")
     parser.add_argument("--title", default=None)
-    parser.add_argument("--status", default="Unapproved · review geometry")
+    parser.add_argument("--status")
+    parser.add_argument("--metadata", type=Path, help="JSON review metadata, including optional presets and sources")
+    parser.add_argument("--three-dir", type=Path, help="Local Three.js 0.180.0 package for offline review")
     parser.add_argument("--parts", type=Path, help="JSON array of named GLB parts and explosion offsets")
     parser.add_argument("--browser", default=None)
     parser.add_argument("--blender", default=None)
@@ -132,9 +188,12 @@ def main(argv=None):
     if source.suffix.lower() not in SUPPORTED:
         parser.error(f"unsupported input extension: {source.suffix}")
     try:
-        parts = load_parts(args.parts.expanduser()) if args.parts is not None else []
+        supplied = load_metadata(args.metadata.expanduser()) if args.metadata else {}
+        parts = load_parts(args.parts.expanduser()) if args.parts else supplied.get("parts", [])
     except (OSError, ValueError, OverflowError) as error:
-        parser.error(f"could not read --parts: {error}")
+        parser.error(f"could not read review metadata: {error}")
+    if args.three_dir and not all((args.three_dir.expanduser() / path).is_file() for path in THREE_FILES):
+        parser.error("--three-dir must contain the Three.js build, example modules and LICENSE")
     output = args.output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     for item in VIEWER.iterdir():
@@ -143,6 +202,15 @@ def main(argv=None):
             shutil.copytree(item, destination, dirs_exist_ok=True)
         else:
             shutil.copy2(item, destination)
+
+    if args.three_dir:
+        for path in THREE_FILES:
+            destination = output / "vendor" / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(args.three_dir.expanduser() / path, destination)
+        for name in ("index.html", "viewer.js"):
+            file = output / name
+            file.write_text(file.read_text().replace(THREE_CDN, "./vendor/"))
 
     glb = output / "model.glb"
     if source.suffix.lower() == ".glb":
@@ -155,13 +223,19 @@ def main(argv=None):
 
     metadata = {
         "title": args.title or source.stem,
-        "status": args.status,
+        "status": "Unapproved · review geometry",
         "facts": {"Source": source.name, "Format": source.suffix.lower().lstrip(".").upper()},
         "note": "Interactive viewing does not certify printability, fit, strength, or load capacity.",
         "prompt": ("Use Explode to separate the assembly. Select a part to inspect it."
                    if parts else "Inspect the model from several angles, then send feedback or approve this exact version."),
         "parts": parts,
     }
+    metadata.update(supplied)
+    metadata["parts"] = parts
+    if args.title is not None:
+        metadata["title"] = args.title
+    if args.status is not None:
+        metadata["status"] = args.status
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     url = None
     if not args.no_screenshot:
