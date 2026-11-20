@@ -4,7 +4,13 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0
 .app-shell { width: min(1320px, 100%); min-height: 100vh; margin: auto; padding: 28px; display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 20px; align-items: center; }
 .viewer-card, .info-card { border: 1px solid #2d3b54; background: rgba(15, 21, 32, .9); border-radius: 18px; box-shadow: 0 22px 70px rgba(0,0,0,.28); }
 .viewer-card { overflow: hidden; }
+.model-import { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-bottom: 1px solid #2d3b54; }
+.model-import span, #model-message { color: #c8d9ee; font-size: 13px; }
+#model-message { flex-basis: 100%; margin: 0; overflow-wrap: anywhere; }
+#model-message:empty { position: absolute; }
+#model-message[data-error] { color: #ffd99a; }
 .viewer { height: min(78vh, 760px); min-height: 520px; position: relative; background: radial-gradient(circle at 50% 42%, #263852 0, #111923 58%, #0b1018 100%); }
+.viewer-card.drag-over .viewer { outline: 2px dashed #a7ceff; outline-offset: -6px; }
 .viewer canvas { display: block; width: 100%; height: 100%; }
 .part-leaders { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 .part-labels { position: absolute; inset: 0; pointer-events: none; }
@@ -15,8 +21,9 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0
 .part-key ol { display: flex; flex-wrap: wrap; gap: 5px 22px; margin: 0; padding-left: 24px; color: #c8d9ee; font-size: 12px; }
 .part-key li { min-width: 150px; padding: 2px 0; }
 .part-key button { border: 0; padding: 0; background: transparent; color: inherit; font-size: inherit; cursor: pointer; }
-.loading { position: absolute; inset: 0; display: grid; place-items: center; color: #a9bbd8; letter-spacing: .02em; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: #a9bbd8; text-align: center; letter-spacing: .02em; pointer-events: none; }
 .loading.hidden { display: none; }
+.loading:not(.hidden) ~ .viewer-help { visibility: hidden; }
 .viewer-help { position: absolute; left: 18px; bottom: 16px; color: #9cadc8; font-size: 12px; pointer-events: none; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; border-top: 1px solid #2d3b54; }
 button { border: 1px solid #456184; border-radius: 9px; padding: 9px 12px; background: #1c2a40; color: #edf3ff; cursor: pointer; font: inherit; font-size: 13px; }
@@ -29,7 +36,8 @@ button:focus-visible, select:focus-visible { outline: 2px solid #a7ceff; outline
 #part-status { margin: 0; flex-basis: 100%; color: #ffd99a; font-size: 13px; }
 .info-card { padding: 26px; }
 .eyebrow { margin: 0 0 10px; color: #79b5ff; font-size: 11px; font-weight: 700; letter-spacing: .15em; }
-h1 { margin: 0; font-size: clamp(24px, 3vw, 34px); line-height: 1.05; }
+h1 { margin: 0; font-size: clamp(24px, 3vw, 34px); line-height: 1.05; overflow-wrap: anywhere; }
+.facts:empty, .review-prompt:empty { display: none; }
 .status { color: #b4c0d2; font-size: 13px; display: flex; align-items: center; gap: 8px; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ffc857; box-shadow: 0 0 12px #ffc857; }
 .facts { border-top: 1px solid #2d3b54; border-bottom: 1px solid #2d3b54; padding: 12px 0; margin: 22px 0; }
@@ -60,7 +68,7 @@ dt { color: #8192ad; } dd { margin: 0; text-align: right; color: #e5efff; }
 }
 .part-key ol { list-style: none; padding-left: 0; }
 
-.motion { border-top: 1px solid rgba(153, 176, 220, .22); }
+.motion { border-top: 0; border-bottom: 1px solid #2d3b54; }
 .motion label { display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; }
 .motion select { max-width: min(14rem, 50vw); text-overflow: ellipsis; }
 .motion-seek { flex: 1 1 14rem; }
@@ -69,3 +77,5 @@ dt { color: #8192ad; } dd { margin: 0; text-align: right; color: #e5efff; }
 #motion-exploded { margin: 0; font-size: .85rem; }
 
 [hidden] { display: none !important; }
+
+.model-download:not([hidden]) { display: inline-block; color: #adcfff; margin: .6rem 0; }

@@ -83,7 +83,10 @@ def validate_parts(parts):
 THREE_FILES = (
     "LICENSE", "build/three.module.js", "build/three.core.js",
     "examples/jsm/controls/OrbitControls.js", "examples/jsm/loaders/GLTFLoader.js",
+    "examples/jsm/loaders/OBJLoader.js", "examples/jsm/loaders/PLYLoader.js",
+    "examples/jsm/loaders/STLLoader.js",
     "examples/jsm/utils/BufferGeometryUtils.js",
+    "examples/jsm/utils/SkeletonUtils.js",
 )
 THREE_CDN = "https://cdn.jsdelivr.net/npm/three@0.180.0/"
 
@@ -225,7 +228,7 @@ def main(argv=None):
             destination = output / "vendor" / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(args.three_dir.expanduser() / path, destination)
-        for name in ("index.html", "viewer.js"):
+        for name in ("index.html", "viewer.js", "local-model.js"):
             file = output / name
             file.write_text(file.read_text().replace(THREE_CDN, "./vendor/"))
 

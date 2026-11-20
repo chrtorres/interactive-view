@@ -4,6 +4,16 @@ Prepare a local Three.js review from a 3D model file. The tool generates a brows
 
 ## Quick start
 
+To view a local model directly, serve the viewer and open `http://127.0.0.1:8765/`.
+
+```sh
+python3 -m http.server 8765 --bind 127.0.0.1 --directory viewer
+```
+
+Choose **Open model** or drop a file into the viewer. It reads GLB, glTF, STL, OBJ, and PLY in your browser. GLB and glTF must include their buffers and textures. OBJ files open as geometry without external material files. Use the preparation command below for Blender files or to create a review package with metadata.
+
+## Prepare a review package
+
 ```sh
 python3 -m tools.prepare_review \
   path/to/model.blend \
@@ -170,3 +180,11 @@ Use `interactive-view-combine <manifest.json> --output <new-directory>` to put p
 ```
 
 Directories are resolved from the manifest and must be self-contained local review packages you intend to serve. The output must be new and outside the inputs. Directory paths are stripped from the browser manifest. Use the current preparer for generic GLB reviews. `exploded` applies to views with valid multipart metadata. Generic views suspend work while inactive and resume without elapsed-time catch-up. A custom scene can integrate the [embedding and trace helpers](viewer/README.md#workspace-lifecycle-and-path-sampling).
+
+## Packaged model downloads and motion studies
+
+The **Download GLB** link appears after the packaged model loads and points to the same binary the viewer uses. A locally imported model suppresses this link so it cannot be mistaken for an export of the local file.
+
+For a companion view driven by fixed-step secondary motion, use the [suspension example](examples/suspension/README.md). Keep part naming, axes, units, parameters, evidence links and license notices with the review package. Verify served download bytes against the loaded asset.
+
+To verify a served package with Playwright installed, run `node tests/check_packaged_download.mjs <review-url>`. The checker waits for the loaded model, compares the saved GLB bytes with the response consumed by the viewer, and exercises local replacement when the import control is present.

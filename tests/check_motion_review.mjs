@@ -119,6 +119,22 @@ try {
   await autoplay.emulateMedia({ reducedMotion: "reduce" });
   await autoplay.waitForFunction(() => !window.readReview().motion.playing);
   check(true, "Changing reduced-motion preference stops autoplay");
+
+  const upload = {
+    name: "local-motion.glb", mimeType: "model/gltf-binary",
+    buffer: await (await autoplay.request.get(new URL("flexible/model.glb", base).href)).body(),
+  };
+  await autoplay.locator("#model-file").setInputFiles(upload);
+  await autoplay.getByText("Opened local-motion.glb", { exact: true }).waitFor();
+  check(!(await motion(autoplay)).motion.playing, "Imported clips respect reduced motion");
+  await autoplay.locator("#play-motion").click();
+  await autoplay.waitForFunction(() => window.readReview().motion.time > .05);
+  await autoplay.emulateMedia({ reducedMotion: "no-preference" });
+  await autoplay.locator("#model-file").setInputFiles({ ...upload, name: "local-autoplay.glb" });
+  await autoplay.getByText("Opened local-autoplay.glb", { exact: true }).waitFor();
+  await autoplay.waitForFunction(() => window.readReview().motion.time > .05);
+  check((await motion(autoplay)).motion.playing && await autoplay.locator("#motion-loop").isChecked(),
+    "Imported clips start playing with loop enabled");
   await autoplay.close();
 
   if (koiURL) {

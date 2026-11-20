@@ -12,25 +12,11 @@
   <body>
     <main class="app-shell">
       <section class="viewer-card" aria-label="Interactive 3D review viewer">
-        <div id="viewer" class="viewer" role="application" aria-label="Rotatable 3D model viewer">
-          <div id="loading" class="loading" role="status">Loading model…</div>
-          <svg id="part-leaders" class="part-leaders" aria-hidden="true"></svg>
-          <div id="part-labels" class="part-labels" aria-live="polite"></div>
-          <div class="viewer-help">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
-        </div>
-        <div class="toolbar" aria-label="Viewer controls">
-          <label id="mode-control" hidden>View <select id="mode"></select></label>
-          <button id="explode" type="button" aria-pressed="false" aria-controls="part-inspection" disabled>Explode</button>
-          <button id="reset" type="button">Reset view</button>
-          <button id="autoRotate" type="button" aria-pressed="false">Auto-rotate</button>
-          <button id="wireframe" type="button" aria-pressed="false">Wireframe</button>
-          <div id="part-inspection" class="part-inspection" hidden>
-            <label for="part">Inspect part</label>
-            <select id="part"><option value="">All parts</option></select>
-            <label id="structure-control" hidden>Structure <select id="structure"></select></label>
-            <label><input id="show-part-labels" type="checkbox" checked aria-controls="part-labels part-leaders part-key" /> Show part labels</label>
-          </div>
-          <p id="part-status" role="status" hidden></p>
+        <div class="model-import">
+          <button id="choose-model" type="button" aria-describedby="model-formats">Open model</button>
+          <input id="model-file" type="file" accept=".glb,.gltf,.stl,.obj,.ply" hidden />
+          <span id="model-formats">Drop a GLB, glTF, STL, OBJ, or PLY file into the viewer</span>
+          <p id="model-message" role="status" aria-atomic="true"></p>
         </div>
         <div id="motion" class="toolbar motion" aria-label="Animation playback" hidden>
           <label>Clip <select id="clip"></select></label>
@@ -46,12 +32,33 @@
           <label id="motion-follow-label" hidden><input id="motion-follow" type="checkbox" /> Follow motion</label>
           <p id="motion-exploded" hidden>Reassemble to inspect animation.</p>
         </div>
+        <div id="viewer" class="viewer" role="application" aria-label="Rotatable 3D model viewer">
+          <div id="loading" class="loading" role="status">Open or drop a model to get started.</div>
+          <svg id="part-leaders" class="part-leaders" aria-hidden="true"></svg>
+          <div id="part-labels" class="part-labels" aria-live="polite"></div>
+          <div class="viewer-help">Drag to orbit · Scroll to zoom · Right-drag to pan</div>
+        </div>
+        <div class="toolbar" aria-label="Viewer controls">
+          <label id="mode-control" hidden>View <select id="mode"></select></label>
+          <button id="explode" type="button" aria-pressed="false" aria-controls="part-inspection" disabled>Explode</button>
+          <button id="reset" type="button" disabled>Reset view</button>
+          <button id="autoRotate" type="button" aria-pressed="false" disabled>Auto-rotate</button>
+          <button id="wireframe" type="button" aria-pressed="false" disabled>Wireframe</button>
+          <div id="part-inspection" class="part-inspection" hidden>
+            <label for="part">Inspect part</label>
+            <select id="part"><option value="">All parts</option></select>
+            <label id="structure-control" hidden>Structure <select id="structure"></select></label>
+            <label><input id="show-part-labels" type="checkbox" checked aria-controls="part-labels part-leaders part-key" /> Show part labels</label>
+          </div>
+          <p id="part-status" role="status" hidden></p>
+        </div>
       </section>
       <aside id="part-key" class="part-key" hidden aria-label="Exploded part key"><h2>Exploded parts</h2><ol></ol></aside>
       <aside class="info-card">
         <p class="eyebrow">INTERACTIVE REVIEW</p>
         <h1 id="title">3D model review</h1>
-        <p class="status"><span class="status-dot"></span><span id="status">Unapproved · review geometry</span></p>
+        <p class="status"><span class="status-dot"></span><span id="status">No model open</span></p>
+        <a id="download-glb" class="model-download" href="model.glb" download hidden>Download GLB</a>
         <dl id="facts" class="facts"></dl>
         <div class="note"><strong>Review note</strong><p id="note">Interactive viewing does not certify printability, fit, strength, or load capacity.</p></div>
         <section id="selection" class="review-detail" hidden aria-label="Selected geometry">
@@ -60,7 +67,7 @@
         <section id="reference" class="review-detail" hidden aria-label="Reference basis">
           <h2>Reference basis</h2><p id="evidence"></p><ul id="sources"></ul>
         </section>
-        <p id="prompt" class="review-prompt">Inspect the model from several angles, then send feedback or approve this exact version.</p>
+        <p id="prompt" class="review-prompt"></p>
       </aside>
     </main>
     <script type="module" src="viewer.js"></script>

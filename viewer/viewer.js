@@ -3,10 +3,17 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.180.0/exampl
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/loaders/GLTFLoader.js";
 
 import { initiallyExploded, viewActive } from "./embedding.js";
+import { disposeModel, loadLocalModel } from "./local-model.js";
 import { createMotion } from "./motion.js";
 
 const host = document.querySelector("#viewer");
 const loading = document.querySelector("#loading");
+const viewerCard = host.closest(".viewer-card");
+const modelFile = document.querySelector("#model-file");
+const modelMessage = document.querySelector("#model-message");
+const resetButton = document.querySelector("#reset");
+const rotateButton = document.querySelector("#autoRotate");
+const wireframeButton = document.querySelector("#wireframe");
 const explodeButton = document.querySelector("#explode");
 const inspection = document.querySelector("#part-inspection");
 const partPicker = document.querySelector("#part");
@@ -45,7 +52,7 @@ let parts = [];
 let guides = [];
 let exploded = false;
 let transition = null;
-let presets = new Map();
+const presets = new Map();
 let selectedPart = null;
 let focusedStructure = null;
 const materials = new Set();
@@ -231,8 +238,7 @@ function inspect(part) {
   document.querySelector("#evidence").textContent = reference?.evidence || "";
 }
 
-function updateLayout(animateParts = false) {
-  const direction = camera.position.clone().sub(controls.target).normalize();
+function updateLayout(animateParts = false, direction = camera.position.clone().sub(controls.target).normalize()) {
   const starts = parts.map(({ node }) => node.position.clone());
   const ends = parts.map((part) => exploded ? part.separated : part.assembled);
   const pick = partPicker.value;
@@ -324,6 +330,7 @@ function renderMetadata(metadata) {
   document.querySelector("#note").textContent = metadata.note || "Interactive viewing does not certify printability, fit, strength, or load capacity.";
   document.querySelector("#prompt").textContent = metadata.prompt || "Inspect the model from several angles, then send feedback or approve this exact version.";
   const facts = document.querySelector("#facts");
+  facts.replaceChildren();
   for (const [key, value] of Object.entries(metadata.facts || {})) {
     const row = document.createElement("div");
     const label = document.createElement("dt"); label.textContent = key;
@@ -332,33 +339,159 @@ function renderMetadata(metadata) {
   }
 }
 
-const metadataRequest = fetch("metadata.json")
-  .then((response) => response.ok ? response.json() : {})
-  .then((metadata) => metadata || {})
-  .catch(() => ({}));
-metadataRequest.then(renderMetadata);
-new GLTFLoader().load("model.glb", async (gltf) => {
+function showModel(gltf, metadata, { local = false } = {}) {
+  if (model) {
+    motion?.dispose();
+    motion = null;
+    scene.remove(model);
+    disposeModel(model);
+  }
+  parts = [];
+  guides = [];
+  presets.clear();
+  materials.clear();
+  exploded = false;
+  transition = null;
+  selectedPart = null;
+  focusedStructure = null;
+  explodeButton.disabled = true;
+  explodeButton.textContent = "Explode";
+  explodeButton.setAttribute("aria-pressed", "false");
+  inspection.hidden = true;
+  partPicker.replaceChildren(new Option("All parts", ""));
+  structurePicker.replaceChildren(new Option("All structures", ""));
+  showPartLabels.checked = true;
+  partKeyList.replaceChildren();
+  modePicker.replaceChildren();
+  document.querySelector("#mode-control").hidden = true;
+  partStatus.textContent = "";
+  partStatus.hidden = true;
+
+  controls.autoRotate = false;
+  rotateButton.setAttribute("aria-pressed", "false");
+  wireframeButton.setAttribute("aria-pressed", "false");
+  for (const button of [resetButton, rotateButton, wireframeButton]) button.disabled = false;
+
   model = gltf.scene;
   model.traverse((node) => {
     if (node.isMesh) {
       for (const material of [node.material].flat()) materials.add(material);
     }
   });
-  const metadata = await metadataRequest;
+  renderMetadata(metadata);
   registerParts(metadata.parts);
   if (!parts.length) guides = model.children.map(node => ({ node, visible: node.visible }));
   registerPresets(metadata);
   scene.add(model);
-  updateLayout();
+  updateLayout(false, defaultDirection);
   motion = createMotion(model, gltf.animations, metadata.animation || {}, {
-    camera, controls, reducedMotion, notice,
+    camera, controls, reducedMotion, notice, local,
     redraw: () => { needsFrame = true; },
     fit: () => frameView(camera.position.clone().sub(controls.target).normalize()),
   });
   if (motion) frameView();
-  if (initiallyExploded && !explodeButton.disabled) explodeButton.click();
   loading.classList.add("hidden");
-}, undefined, (error) => { loading.textContent = "Could not load model.glb"; console.error(error); });
+}
+
+const formats = [...modelFile.accept.matchAll(/\.([a-z]+)/g)].map((match) => match[1]);
+let loadId = 0;
+async function loadPackagedModel() {
+  const id = ++loadId;
+  const metadata = await fetch("metadata.json")
+    .then((response) => response.ok ? response.json() : {})
+    .catch(() => ({}));
+  if (id !== loadId || metadata?.autoload === false) return;
+  renderMetadata(metadata || {});
+  loading.textContent = "Loading model…";
+  try {
+    const gltf = await new GLTFLoader().loadAsync("model.glb");
+    if (id !== loadId) {
+      disposeModel(gltf.scene);
+      return;
+    }
+    showModel(gltf, metadata || {});
+    document.querySelector("#download-glb").hidden = false;
+    if (initiallyExploded && !explodeButton.disabled) explodeButton.click();
+  } catch (error) {
+    if (id !== loadId) return;
+    loading.textContent = "Could not load model.glb";
+    console.error(error);
+  }
+}
+
+function reportImport(message, error = false) {
+  modelMessage.toggleAttribute("data-error", error);
+  modelMessage.textContent = message;
+}
+
+async function openModel(files) {
+  if (!files.length) return;
+  if (files.length !== 1) {
+    reportImport("Choose one model file at a time.", true);
+    return;
+  }
+  const file = files[0];
+  const format = file.name.toLowerCase().match(/\.([^.]+)$/)?.[1];
+  if (!formats.includes(format)) {
+    reportImport("Choose a GLB, glTF, STL, OBJ, or PLY file.", true);
+    return;
+  }
+
+  const id = ++loadId;
+  reportImport(`Opening ${file.name}…`);
+  if (!model) loading.textContent = "Loading model…";
+  try {
+    const gltf = await loadLocalModel(file, format);
+    if (id !== loadId) {
+      disposeModel(gltf.scene);
+      return;
+    }
+    const bounds = new THREE.Box3().setFromObject(gltf.scene);
+    if (bounds.isEmpty() || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)) {
+      disposeModel(gltf.scene);
+      throw new Error("The file contains no viewable geometry.");
+    }
+    showModel(gltf, { title: file.name, status: "Local model", facts: { Format: format.toUpperCase() },
+      animation: { autoplay: true, loop: true },
+      prompt: "Open or drop another model to replace this view." }, { local: true });
+    document.querySelector("#download-glb").hidden = true;
+    reportImport(`Opened ${file.name}`);
+  } catch {
+    if (id !== loadId) return;
+    if (!model) loading.textContent = "Open or drop a model to get started.";
+    const guidance = format === "glb" || format === "gltf"
+      ? " Use a self-contained model with embedded buffers and textures."
+      : " Check that the file contains valid geometry.";
+    reportImport(`Could not open ${file.name}.${guidance}`, true);
+  }
+}
+
+document.querySelector("#choose-model").addEventListener("click", () => modelFile.click());
+modelFile.addEventListener("change", () => {
+  const files = Array.from(modelFile.files);
+  modelFile.value = "";
+  openModel(files);
+});
+
+// Keep file drops from replacing the browser page.
+const isFileDrag = (event) => event.dataTransfer.types.includes("Files");
+window.addEventListener("dragover", (event) => {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  const overViewer = viewerCard.contains(event.target);
+  event.dataTransfer.dropEffect = overViewer ? "copy" : "none";
+  viewerCard.classList.toggle("drag-over", overViewer);
+});
+viewerCard.addEventListener("dragleave", (event) => {
+  if (!viewerCard.contains(event.relatedTarget)) viewerCard.classList.remove("drag-over");
+});
+window.addEventListener("drop", (event) => {
+  if (!isFileDrag(event)) return;
+  event.preventDefault();
+  viewerCard.classList.remove("drag-over");
+  if (viewerCard.contains(event.target)) openModel(event.dataTransfer.files);
+});
+loadPackagedModel();
 
 explodeButton.addEventListener("click", () => {
   exploded = !exploded;
@@ -375,15 +508,15 @@ modePicker.addEventListener("change", () => {
   if (exploded) explodeButton.click();
   else updateLayout();
 });
-document.querySelector("#reset").addEventListener("click", () => {
+resetButton.addEventListener("click", () => {
   if (transition) updateLayout();
   frameView();
 });
-document.querySelector("#autoRotate").addEventListener("click", (event) => {
+rotateButton.addEventListener("click", (event) => {
   controls.autoRotate = !controls.autoRotate;
   event.currentTarget.setAttribute("aria-pressed", String(controls.autoRotate));
 });
-document.querySelector("#wireframe").addEventListener("click", (event) => {
+wireframeButton.addEventListener("click", (event) => {
   const enabled = event.currentTarget.getAttribute("aria-pressed") !== "true";
   event.currentTarget.setAttribute("aria-pressed", String(enabled));
   for (const material of materials) material.wireframe = enabled;

@@ -1,6 +1,38 @@
 import * as THREE from "three";
 
-export function createMotion(model, clips, config, { camera, controls, redraw, fit, reducedMotion, notice }) {
+function contains(root, node) {
+  for (let parent = node; parent; parent = parent.parent) {
+    if (parent === root) return true;
+  }
+  return false;
+}
+
+function findImportedMotionRoot(model, clips) {
+  const targets = new Set();
+  const translating = new Set();
+  for (const clip of clips) {
+    for (const track of clip.tracks) {
+      const { nodeName, propertyName } = THREE.PropertyBinding.parseTrackName(track.name);
+      const node = THREE.PropertyBinding.findNode(model, nodeName);
+      if (!node) return null;
+      targets.add(node);
+      if (propertyName === "position") translating.add(node);
+    }
+  }
+
+  // Follow a shared translating root only when it carries the visible model.
+  const animatedNodes = [...targets];
+  const root = [...translating].find(node => animatedNodes.every(target => contains(node, target)));
+  if (!root) return null;
+  let carriesModel = true;
+  model.traverseVisible(node => {
+    if (!(node.isMesh || node.isLine || node.isPoints) || contains(root, node)) return;
+    if (!node.isSkinnedMesh || !node.skeleton.bones.every(bone => contains(root, bone))) carriesModel = false;
+  });
+  return carriesModel ? root : null;
+}
+
+export function createMotion(model, clips, config, { camera, controls, redraw, fit, reducedMotion, notice, local }) {
   const panel = document.querySelector("#motion");
   const get = (id) => panel.querySelector("#" + id);
   const picker = get("clip"), play = get("play-motion"), seek = get("motion-time");
@@ -9,6 +41,8 @@ export function createMotion(model, clips, config, { camera, controls, redraw, f
   const mixer = new THREE.AnimationMixer(model);
   const available = clips.filter((clip) => Number.isFinite(clip.duration) && clip.duration > 0);
   if (!available.length) return null;
+  const events = new AbortController();
+  const { signal } = events;
   const nodeName = typeof config.followNode === "string" && config.followNode.trim()
     ? THREE.PropertyBinding.sanitizeNodeName(config.followNode) : null;
   const matches = [];
@@ -17,9 +51,10 @@ export function createMotion(model, clips, config, { camera, controls, redraw, f
     // Imported skinned bounds may describe the bind pose far from a traveling root.
     if (node.isSkinnedMesh) node.frustumCulled = false;
   });
-  const root = matches.length === 1 ? matches[0] : null;
+  const root = local ? findImportedMotionRoot(model, available) : matches.length === 1 ? matches[0] : null;
   if (nodeName && !root) notice("The animation follow node could not be identified.");
   get("motion-follow-label").hidden = !root;
+  follow.checked = Boolean(local && root);
   loop.checked = config.loop === true;
   const point = new THREE.Vector3();
   const anchor = new THREE.Vector3();
@@ -81,26 +116,26 @@ export function createMotion(model, clips, config, { camera, controls, redraw, f
   panel.hidden = false;
   setPlaying(config.autoplay === true && !reducedMotion.matches);
 
-  picker.addEventListener("change", () => select());
+  picker.addEventListener("change", () => select(), { signal });
   play.addEventListener("click", () => {
     if (!playing && time >= duration) {
       time = 0;
       apply();
     }
     setPlaying(!playing);
-  });
+  }, { signal });
   seek.addEventListener("input", () => {
     setPlaying(false);
     time = Number(seek.value);
     apply();
-  });
+  }, { signal });
   follow.addEventListener("change", () => {
     apply(false);
     if (follow.checked) fit();
-  });
+  }, { signal });
   reducedMotion.addEventListener("change", () => {
     if (reducedMotion.matches) setPlaying(false);
-  });
+  }, { signal });
 
   return {
     apply,
@@ -120,6 +155,17 @@ export function createMotion(model, clips, config, { camera, controls, redraw, f
       apply();
     },
     resetClock() { previousTick = null; },
+    dispose() {
+      events.abort();
+      mixer.stopAllAction();
+      mixer.uncacheRoot(model);
+      panel.hidden = true;
+      picker.replaceChildren();
+      speed.value = "1";
+      follow.checked = false;
+      get("motion-exploded").hidden = true;
+      for (const input of panel.querySelectorAll("input,select,button")) input.disabled = false;
+    },
     get suspended() { return suspended; },
     setSuspended(value) {
       if (value === suspended) return;

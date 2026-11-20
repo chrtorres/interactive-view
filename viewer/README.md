@@ -1,6 +1,6 @@
 # Interactive review viewer template
 
-Copy this directory into a versioned creation run, place the exact reviewed GLB at `model.glb`, and replace the synthetic values in `metadata.json`. Serve the directory over HTTP; do not open it directly with `file://`.
+Serve this directory over HTTP and choose **Open model** or drop a supported file into the viewer. For a packaged review, copy this directory into a versioned creation run, place the exact reviewed GLB at `model.glb`, and update `metadata.json` with the review values. Remove `"autoload": false` to open the packaged model on launch.
 
 The template uses Three.js 0.180.0 and its `OrbitControls`/`GLTFLoader` modules from jsDelivr at runtime. A browser with WebGL and network access to the CDN is required. The template is a review aid, not a CAD editor, mesh validator, slicer, or load-certification tool.
 
@@ -23,11 +23,13 @@ Optional fields in the metadata enable layered inspection.
 
 Use **View** to inspect assembled presets. Under **Explode**, pick a part, then use **Structure** to inspect a listed child. **All structures** restores its original children. **Reassemble** restores the preset and original transforms. Context nodes can appear in a preset without appearing in the exploded layout.
 
-The preparation command accepts this metadata directly via `--metadata`. Pass `--three-dir` pointing to a local Three.js 0.180.0 package to embed the required modules and MIT license for offline use. The viewer itself serves all model data over HTTP.
+The preparation command accepts this metadata directly via `--metadata`. Pass `--three-dir` pointing to a local Three.js 0.180.0 package to embed the required modules and MIT license for offline use. Packaged models are served over HTTP, and files opened with the picker or drag-and-drop are read directly by the browser.
 
 ## Animated models
 
 The viewer discovers timed clips in the GLB. Choose a clip, play or pause it, scrub the timeline, or change the playback rate. **Loop** repeats the selected clip. A model with no timed clips has no playback toolbar. **Reset view** fits the current pose. When an assembly is exploded, the viewer restores the authored rest transforms and gives the layout control of the parts. Reassembly returns to the same paused animation time.
+
+Local GLB and glTF files play and loop their first clip on open. With reduced motion enabled, use **Play** to start. If the viewer detects a translating root that carries the model, **Follow motion** starts enabled. Turn it off to keep the camera fixed.
 
 Optional metadata example:
 
@@ -45,7 +47,7 @@ Optional metadata example:
 
 - `defaultClip` and `labels` use clip names from the GLB. Unlabeled clips use their authored names.
 - `followNode` identifies a uniquely named scene node or bone and enables **Follow motion**. The camera and orbit target translate with its evaluated world position, keeping the current viewing direction. GLB animation drives the model.
-- `autoplay` and `loop` default to false. The browser's reduced-motion preference suppresses autoplay. Scrubbing pauses at the selected time, including the exact endpoint. Looping is best suited to clips authored with matching endpoints.
+- For packaged reviews, `autoplay` and `loop` default to false. The browser's reduced-motion preference suppresses autoplay. Scrubbing pauses at the selected time, including the exact endpoint. Looping is best suited to clips authored with matching endpoints.
 - This viewer supports animation tracks decoded by the bundled glTF loader. Physically measured accuracy, loop continuity between keys, material animation extensions, and compressed assets that require additional decoders have separate validation or integration requirements.
 
 ## Workspace lifecycle and path sampling
